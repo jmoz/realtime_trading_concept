@@ -1,24 +1,12 @@
 import asyncio
-import json
-from decimal import Decimal
 
 from cryptofeed import FeedHandler
 from cryptofeed.defines import TRADES
 from cryptofeed.exchanges import FTX
 
 from callbacks import OnBarOpen
+from exchange import fetch_markets, fetch_candles
 from models import Candle, Context
-
-
-async def fetch_markets(api, retry_count=1, retry_delay=60):
-    data = await api.http_conn.read(f"{api.api}/markets", retry_count=retry_count, retry_delay=retry_delay)
-    data = json.loads(data, parse_float=Decimal)['result']
-    return data
-
-
-async def fetch_candles(api, symbol):
-    candles = [c async for c in api.candles(symbol)][0]  # uses a generator to request more candles
-    return candles
 
 
 async def init(context):
@@ -36,17 +24,7 @@ async def init(context):
     for c in candles:
         # map candles by standardised symbol ETH-USD-PERP
         context.candles[c[0].symbol] = list(map(lambda x: Candle(x.timestamp, x.open, x.high, x.low, x.close), c))
-
-    # print(context.markets.keys())
-    # print(context.candles.keys())
     print('init end')
-
-
-async def trade_callback(t, ts, context):
-    last = context.candles[t.symbol][-1]
-    pc_change = t.price / last.close * 100 - 100
-    if pc_change > 1:
-        print(f'{t.symbol} {t.price / last.close * 100 - 100:.2f} last {last.close} current {t.price}')
 
 
 async def open_callback(candles, trade_dt, receipt_dt):
@@ -55,8 +33,7 @@ async def open_callback(candles, trade_dt, receipt_dt):
 
 
 async def main():
-    # prepare context structure for easy later use
-    context = Context()
+    context = Context()  # prepare context structure for easy later use
 
     await init(context)  # load all the markets and 1m candles into context var
 
