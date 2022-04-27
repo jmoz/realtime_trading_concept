@@ -14,15 +14,15 @@ class OnBarOpen(AggregateCallback):
     def __init__(self, *args, timeframe='1m', **kwargs):
         self.context = kwargs.pop('context')
         super().__init__(*args, **kwargs)
-        self.last_open = {}
+        self.current_open = None
         self.data = {}
         self.timeframe = timeframe
 
     def _agg(self, trade):
         # New symbol, create the structure with some price data, highs and lows don't matter
         if trade.symbol not in self.data:
-            self.data[trade.symbol] = {self.last_open[trade.symbol]: Candle(
-                self.last_open[trade.symbol],
+            self.data[trade.symbol] = {self.current_open: Candle(
+                self.current_open,
                 trade.price,
                 trade.price,
                 trade.price,
@@ -30,9 +30,9 @@ class OnBarOpen(AggregateCallback):
             )}
 
         # New open timestamp, create the same as above
-        if self.last_open[trade.symbol] not in self.data[trade.symbol]:
-            self.data[trade.symbol][self.last_open[trade.symbol]] = Candle(
-                self.last_open[trade.symbol],
+        if self.current_open not in self.data[trade.symbol]:
+            self.data[trade.symbol][self.current_open] = Candle(
+                self.current_open,
                 trade.price,
                 trade.price,
                 trade.price,
@@ -40,11 +40,11 @@ class OnBarOpen(AggregateCallback):
             )
 
         # The core code to constantly update a candle
-        self.data[trade.symbol][self.last_open[trade.symbol]] = Candle(
-            self.last_open[trade.symbol],
-            self.data[trade.symbol][self.last_open[trade.symbol]].open,
-            max(trade.price, self.data[trade.symbol][self.last_open[trade.symbol]].high),
-            min(trade.price, self.data[trade.symbol][self.last_open[trade.symbol]].low),
+        self.data[trade.symbol][self.current_open] = Candle(
+            self.current_open,
+            self.data[trade.symbol][self.current_open].open,
+            max(trade.price, self.data[trade.symbol][self.current_open].high),
+            min(trade.price, self.data[trade.symbol][self.current_open].low),
             trade.price,
         )
 
@@ -53,20 +53,25 @@ class OnBarOpen(AggregateCallback):
         logger.debug(f'Latency {latency * 1000:.0f}ms')
 
         trade_dt = datetime.fromtimestamp(trade.timestamp)
+        receipt_dt = datetime.fromtimestamp(receipt_timestamp)
         this_open = trade_dt.replace(second=0, microsecond=0).timestamp()
 
-        if trade.symbol not in self.last_open:
-            self.last_open[trade.symbol] = this_open
+        if self.current_open is None:
+            self.current_open = this_open
 
         # on new bar open
-        if this_open > self.last_open[trade.symbol]:
-            last_bar = self.data[trade.symbol][self.last_open[trade.symbol]]
+        if this_open > self.current_open:
+            for symbol in self.data:
+                try:
+                    self.context.candles[symbol].append(self.data[symbol][self.current_open])
+                except KeyError:
+                    # no candle for time period
+                    pass
 
-            self.context['candles'][trade.symbol].append(last_bar)
+            self.current_open = this_open
 
             # call handler with candles, symbol, timestamp
-            await self.handler(self.context['candles'][trade.symbol], trade.symbol, trade_dt)
-            self.last_open[trade.symbol] = this_open
+            await self.handler(self.context.candles, trade_dt, receipt_dt)
 
         self._agg(trade)
 
