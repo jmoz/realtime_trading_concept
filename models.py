@@ -17,4 +17,4 @@ class Candle:
     close: float
 
     def dt(self):
-        return datetime.fromtimestamp(self.timestamp)
+        return datetime.utcfromtimestamp(self.timestamp)

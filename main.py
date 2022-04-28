@@ -29,7 +29,9 @@ async def init(context):
 
 async def open_callback(candles, trade_dt, receipt_dt):
     last = candles['ETH-USD-PERP'][-1]
-    print(f'{last.dt()} {last.close}')
+    first = candles['ETH-USD-PERP'][-10]
+    change = last.close / first.close * 100 - 100
+    print(f'{last.dt()} {last.close} (change {change:.2f}% since {first.dt().time()} at {first.close})')
 
 
 async def main():

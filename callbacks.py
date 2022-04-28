@@ -52,8 +52,8 @@ class OnBarOpen(AggregateCallback):
         latency = receipt_timestamp - trade.timestamp
         logger.debug(f'Latency {latency * 1000:.0f}ms')
 
-        trade_dt = datetime.fromtimestamp(trade.timestamp)
-        receipt_dt = datetime.fromtimestamp(receipt_timestamp)
+        trade_dt = datetime.utcfromtimestamp(trade.timestamp)
+        receipt_dt = datetime.utcfromtimestamp(receipt_timestamp)
         this_open = trade_dt.replace(second=0, microsecond=0).timestamp()
 
         if self.current_open is None:
