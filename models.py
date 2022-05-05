@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass
@@ -15,6 +15,7 @@ class Candle:
     high: float
     low: float
     close: float
+    volume: float
 
     def dt(self):
-        return datetime.utcfromtimestamp(self.timestamp)
+        return datetime.fromtimestamp(self.timestamp, timezone.utc)

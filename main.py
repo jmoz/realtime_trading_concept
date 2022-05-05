@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from cryptofeed import FeedHandler
 from cryptofeed.defines import TRADES
@@ -9,7 +10,7 @@ from exchange import fetch_markets, fetch_candles
 from models import Candle, Context
 
 
-async def init(context):
+async def init(context, timeframe='1m'):
     print('init start')
     ftx = FTX(config='config.yaml')
 
@@ -20,29 +21,34 @@ async def init(context):
         std_market = f"{m['name'].split('-')[0]}-USD-PERP"
         context.markets[std_market] = m
 
-    candles = await asyncio.gather(*[fetch_candles(ftx, m) for m in context.markets])
+    candles = await asyncio.gather(*[fetch_candles(ftx, m, timeframe) for m in context.markets])
     for c in candles:
         # map candles by standardised symbol ETH-USD-PERP
-        context.candles[c[0].symbol] = list(map(lambda x: Candle(x.timestamp, x.open, x.high, x.low, x.close), c))
+        context.candles[c[0].symbol] = list(
+            map(lambda x: Candle(x.timestamp, x.open, x.high, x.low, x.close, x.volume), c))
     print('init end')
+
+    print(datetime.utcnow())
+    for c in context.candles['ETH-USD-PERP'][-5:]:
+        print(f'{c.dt()} {c}')
 
 
 async def open_callback(candles, trade_dt, receipt_dt):
     last = candles['ETH-USD-PERP'][-1]
-    first = candles['ETH-USD-PERP'][-10]
-    change = last.close / first.close * 100 - 100
-    print(f'{last.dt()} {last.close} (change {change:.2f}% since {first.dt().time()} at {first.close})')
+    print(f'{last.dt()} o {last.open} h {last.high} l {last.low} c {last.close} v {last.volume}')
 
 
 async def main():
-    context = Context()  # prepare context structure for easy later use
+    context = Context()
 
-    await init(context)  # load all the markets and 1m candles into context var
+    timeframe = '15m'
+
+    await init(context, timeframe)  # load all the markets and 1m candles into context var
 
     f = FeedHandler(config="config.yaml")
     # subscribe to all markets on bar open callback
     f.add_feed(FTX(config="config.yaml", symbols=[m for m in context.markets], channels=[TRADES],
-                   callbacks={TRADES: OnBarOpen(open_callback, timeframe='1m', context=context)}))
+                   callbacks={TRADES: OnBarOpen(open_callback, timeframe=timeframe, context=context)}))
     f.run(start_loop=False)
 
 
