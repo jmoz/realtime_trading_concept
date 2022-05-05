@@ -90,12 +90,3 @@ def get_open_dt(timeframe, trade_dt):
     this_open = trade_dt.replace(**replace_params).timestamp()
 
     return this_open
-
-
-class Context:
-    def __init__(self, handler, context):
-        self.handler = handler
-        self.context = context
-
-    async def __call__(self, data, receipt_timestamp):
-        await self.handler(data, receipt_timestamp, self.context)
