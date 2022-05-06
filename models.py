@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 @dataclass
 class Context:
-    markets: dict = field(default_factory=dict)
+    markets: list = field(default_factory=list)
     candles: dict = field(default_factory=dict)
 
 

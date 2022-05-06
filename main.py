@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime
 
 from cryptofeed import FeedHandler
@@ -8,24 +9,27 @@ from callbacks import OnBarOpen
 from exchange import MyFTX
 from models import Candle, Context
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 async def initialise(context, timeframe='1m'):
-    print('init start')
-    ftx = MyFTX(config='config.yaml')
+    logger.debug('Initialise start')
+    ex = MyFTX(config='config.yaml')
 
-    markets = await ftx.fetch_markets()
-    markets = [m for m in markets if m['name'].endswith('PERP')]
-    for m in markets:
-        # lib confusingly changes symbol names ETH-PERP to ETH-USD-PERP and for spot ETH/USD to ETH-USD
-        std_market = f"{m['name'].split('-')[0]}-USD-PERP"
-        context.markets[std_market] = m
+    markets = await ex.fetch_markets()
+    perps = [m for m in markets if m['name'].endswith('PERP')]
+    # lib confusingly changes symbol names ETH-PERP to ETH-USD-PERP and for spot ETH/USD to ETH-USD
+    context.markets = [f"{p['name'].split('-')[0]}-USD-PERP" for p in perps]
+    logger.info(f'Loaded markets: {context.markets}')
 
-    candles = await asyncio.gather(*[ftx.fetch_candles(m, timeframe) for m in context.markets])
+    candles = await asyncio.gather(*[ex.fetch_candles(m, timeframe) for m in context.markets])
     for c in candles:
         # map candles by standardised symbol ETH-USD-PERP
         context.candles[c[0].symbol] = list(
             map(lambda x: Candle(x.timestamp, x.open, x.high, x.low, x.close, x.volume), c))
-    print('init end')
+    logger.info(f'Loaded candles: {sum(map(len, context.candles.values()))}')
+    logger.debug('Initialise end')
 
     print(datetime.utcnow())
     for c in context.candles['ETH-USD-PERP'][-5:]:
@@ -39,14 +43,13 @@ async def open_callback(candles, trade_dt, receipt_dt):
 
 async def main():
     context = Context()
-
     timeframe = '15m'
 
-    await initialise(context, timeframe)  # load all the markets and 1m candles into context var
+    await initialise(context, timeframe)  # load all the markets and candles into context var
 
     f = FeedHandler(config="config.yaml")
     # subscribe to all markets on bar open callback
-    f.add_feed(MyFTX(config="config.yaml", symbols=[m for m in context.markets], channels=[TRADES],
+    f.add_feed(MyFTX(config="config.yaml", symbols=context.markets, channels=[TRADES],
                      callbacks={TRADES: OnBarOpen(open_callback, timeframe=timeframe, context=context)}))
     f.run(start_loop=False)
 
