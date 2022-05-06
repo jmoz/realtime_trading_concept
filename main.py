@@ -3,25 +3,24 @@ from datetime import datetime
 
 from cryptofeed import FeedHandler
 from cryptofeed.defines import TRADES
-from cryptofeed.exchanges import FTX
 
 from callbacks import OnBarOpen
-from exchange import fetch_markets, fetch_candles
+from exchange import MyFTX
 from models import Candle, Context
 
 
-async def init(context, timeframe='1m'):
+async def initialise(context, timeframe='1m'):
     print('init start')
-    ftx = FTX(config='config.yaml')
+    ftx = MyFTX(config='config.yaml')
 
-    markets = await fetch_markets(ftx)
+    markets = await ftx.fetch_markets()
     markets = [m for m in markets if m['name'].endswith('PERP')]
     for m in markets:
         # lib confusingly changes symbol names ETH-PERP to ETH-USD-PERP and for spot ETH/USD to ETH-USD
         std_market = f"{m['name'].split('-')[0]}-USD-PERP"
         context.markets[std_market] = m
 
-    candles = await asyncio.gather(*[fetch_candles(ftx, m, timeframe) for m in context.markets])
+    candles = await asyncio.gather(*[ftx.fetch_candles(m, timeframe) for m in context.markets])
     for c in candles:
         # map candles by standardised symbol ETH-USD-PERP
         context.candles[c[0].symbol] = list(
@@ -43,12 +42,12 @@ async def main():
 
     timeframe = '15m'
 
-    await init(context, timeframe)  # load all the markets and 1m candles into context var
+    await initialise(context, timeframe)  # load all the markets and 1m candles into context var
 
     f = FeedHandler(config="config.yaml")
     # subscribe to all markets on bar open callback
-    f.add_feed(FTX(config="config.yaml", symbols=[m for m in context.markets], channels=[TRADES],
-                   callbacks={TRADES: OnBarOpen(open_callback, timeframe=timeframe, context=context)}))
+    f.add_feed(MyFTX(config="config.yaml", symbols=[m for m in context.markets], channels=[TRADES],
+                     callbacks={TRADES: OnBarOpen(open_callback, timeframe=timeframe, context=context)}))
     f.run(start_loop=False)
 
 
