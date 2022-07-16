@@ -26,9 +26,9 @@ async def min_run():
 
         async with aconn.cursor() as acur:
             await acur.execute(
-                # "SELECT * FROM candles_1m WHERE symbol = %s order by bucket desc LIMIT 1000",
                 "SELECT * FROM candles_1m "
-                "WHERE bucket > NOW() - INTERVAL '1 hour' and bucket < date_trunc('second', now()) order by bucket",
+                "WHERE bucket > NOW() - INTERVAL '1 hour' AND bucket < date_trunc('second', now()) "
+                "ORDER BY bucket",
             )
             logger.info(f'Task query executed {datetime.now()}')
             result = await acur.fetchall()

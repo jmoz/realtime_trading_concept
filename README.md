@@ -16,7 +16,7 @@ Trade ticks are then fed into TS trades hypertable.
 
 TS uses a continuous aggregate to create bucketed candles, 1m, 1h etc.
 
-We have a scheduled service using APScheduler which runs hourly that fetches the aggregated candles from TS and then we would implement our algorithm and api calls after.
+We have a scheduled service using APScheduler which runs hourly that fetches the aggregated candles (1 hour of 1m candles) from TS and then we would implement our algorithm and api calls after.
 
 # Usage
 
@@ -44,6 +44,48 @@ We timestamp each step of execution to see where the time is spent.
 The task is scheduled to fire every 5 minutes. We can see there is a small delay at the start of the task (.020036s).
 
 The main delay is unsurprisingly from executing and fetching the candle data from TS. There is roughly a half second delay on average (measured by eyeballing previous runs on a M1 Air). This example shows a delay of up to .371177s until data is fetched. This does not include any algorithm logic and api calls which would be additional.
+
+# Psql
+
+Analysing the query on psql shows it is fairly performant at 19ms execution.
+
+    postgres=# explain (analyze on, buffers on) SELECT * FROM candles_1m WHERE bucket > NOW() - INTERVAL '1 hour' and bucket < date_trunc('second', now()) order by bucket;
+                                                                                                                                    QUERY PLAN
+    --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+     Sort  (cost=11.11..11.22 rows=44 width=56) (actual time=17.190..17.802 rows=7070 loops=1)
+       Sort Key: _materialized_hypertable_4.bucket
+       Sort Method: quicksort  Memory: 1187kB
+       Buffers: shared hit=196
+       ->  Append  (cost=0.44..9.91 rows=44 width=56) (actual time=0.083..13.339 rows=7070 loops=1)
+             Buffers: shared hit=196
+             ->  Custom Scan (ChunkAppend) on _materialized_hypertable_4  (cost=0.44..3.58 rows=42 width=55) (actual time=0.082..6.043 rows=6882 loops=1)
+                   Chunks excluded during startup: 0
+                   Buffers: shared hit=145
+                   ->  Index Scan using _hyper_4_5_chunk__materialized_hypertable_4_bucket_idx on _hyper_4_5_chunk  (cost=0.44..3.58 rows=42 width=55) (actual time=0.080..4.555 rows=6882 loops=1)
+                         Index Cond: ((bucket < COALESCE(_timescaledb_internal.to_timestamp(_timescaledb_internal.cagg_watermark(4)), '-infinity'::timestamp with time zone)) AND (bucket > (now() - '01:00:00'::interval)) AND (bucket < date_trunc('second'::text, now())))
+                         Buffers: shared hit=145
+             ->  GroupAggregate  (cost=5.58..5.66 rows=2 width=81) (actual time=4.472..6.121 rows=188 loops=1)
+                   Group Key: (time_bucket('00:01:00'::interval, trades."timestamp")), trades.symbol
+                   Buffers: shared hit=51
+                   ->  Sort  (cost=5.58..5.58 rows=2 width=38) (actual time=4.435..4.600 rows=2410 loops=1)
+                         Sort Key: (time_bucket('00:01:00'::interval, trades."timestamp")), trades.symbol
+                         Sort Method: quicksort  Memory: 285kB
+                         Buffers: shared hit=51
+                         ->  Custom Scan (ChunkAppend) on trades  (cost=0.44..5.57 rows=2 width=38) (actual time=0.080..2.288 rows=2410 loops=1)
+                               Chunks excluded during startup: 1
+                               Buffers: shared hit=51
+                               ->  Index Scan using _hyper_1_2_chunk_trades_timestamp_idx on _hyper_1_2_chunk  (cost=0.44..3.16 rows=1 width=30) (a
+    ctual time=0.076..1.629 rows=2410 loops=1)
+                                     Index Cond: ("timestamp" >= COALESCE(_timescaledb_internal.to_timestamp(_timescaledb_internal.cagg_watermark(4
+    )), '-infinity'::timestamp with time zone))
+                                     Filter: ((time_bucket('00:01:00'::interval, "timestamp") > (now() - '01:00:00'::interval)) AND (time_bucket('0
+    0:01:00'::interval, "timestamp") < date_trunc('second'::text, now())))
+                                     Buffers: shared hit=51
+     Planning:
+       Buffers: shared hit=106
+     Planning Time: 8.358 ms
+     Execution Time: 19.700 ms
+    (30 rows)
 
 # Conclusion
 
